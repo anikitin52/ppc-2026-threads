@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <vector>
 
 #include "nikitin_a_monte_carlo/common/include/common.hpp"

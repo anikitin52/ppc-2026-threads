@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cmath>
-#include <cstddef>
 #include <vector>
 
 #include "nikitin_a_monte_carlo/common/include/common.hpp"
@@ -32,7 +31,7 @@ double EvaluateFunction(const std::vector<double> &point, FunctionType type) {
 double KroneckerSequence(int index, int dimension) {
   // Используем простые числа для разных измерений
   const std::array<double, 10> primes = {2.0, 3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0, 23.0, 29.0};
-  double alpha = std::sqrt(primes[static_cast<std::size_t>(dimension % 10)]);
+  double alpha = std::sqrt(primes.at(static_cast<std::size_t>(dimension % 10)));
   // Берем дробную часть
   alpha = alpha - std::floor(alpha);
   return std::fmod(index * alpha, 1.0);

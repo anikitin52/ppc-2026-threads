@@ -48,7 +48,7 @@ class NikitinAMonteCarloFuncTests : public ppc::util::BaseRunFuncTests<InType, O
         tolerance_ = 0.02;
         break;
       case 5:
-        expected_output_ = std::exp(1.0) - 1.0;  // NOLINT(modernize-use-std-numbers)
+        expected_output_ = std::exp(1.0) - 1.0;
         tolerance_ = 0.03;
         break;
 

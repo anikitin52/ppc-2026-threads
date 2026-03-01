@@ -2,12 +2,9 @@
 
 #include <algorithm>
 #include <cstring>
-#include <numeric>
 #include <vector>
-
+#include <cstdint>
 #include "titaev_m_sortirovka_betchera/common/include/common.hpp"
-#include "util/include/util.hpp"
-
 namespace titaev_m_sortirovka_betchera {
 
 TitaevSortirovkaBetcheraSEQ::TitaevSortirovkaBetcheraSEQ(const InType &in) {
@@ -34,7 +31,7 @@ bool TitaevSortirovkaBetcheraSEQ::RunImpl() {
 
   std::vector<uint64_t> keys(n);
   for (size_t i = 0; i < n; i++) {
-    uint64_t x;
+    uint64_t x = 0;
     std::memcpy(&x, &result[i], sizeof(double));
 
     int64_t sx = static_cast<int64_t>(x);

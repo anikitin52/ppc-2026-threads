@@ -12,17 +12,27 @@ namespace nikitin_a_monte_carlo {
 namespace {
 // Вспомогательная функция для вычисления значения тестовой функции
 double EvaluateFunction(const std::vector<double> &point, FunctionType type) {
+  if (point.empty()) {
+    return 0.0;
+  }
+
   switch (type) {
     case FunctionType::kConstant:
       return 1.0;
     case FunctionType::kLinear:
-      return point[0];
+      return point.at(0);
     case FunctionType::kProduct:
-      return point[0] * point[1];
+      if (point.size() < 2) {
+        return 0.0;
+      }
+      return point.at(0) * point.at(1);
     case FunctionType::kQuadratic:
-      return (point[0] * point[0]) + (point[1] * point[1]);
+      if (point.size() < 2) {
+        return 0.0;
+      }
+      return (point.at(0) * point.at(0)) + (point.at(1) * point.at(1));
     case FunctionType::kExponential:
-      return std::exp(point[0]);
+      return std::exp(point.at(0));
     default:
       return 0.0;
   }

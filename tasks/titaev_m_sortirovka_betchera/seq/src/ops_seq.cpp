@@ -123,14 +123,19 @@ bool TitaevSortirovkaBetcheraSEQ::RunImpl() {
   auto &input = GetInput();
   const size_t n = input.size();
   if (n <= 1) {
+    GetOutput() = input;
     return true;
   }
 
   std::vector<uint64_t> keys(n);
   ConvertToKeys(input, keys);
   RadixSort(keys);
+
   ConvertFromKeys(keys, GetOutput());
-  BatcherSort();
+
+  if ((n & (n - 1)) == 0) {
+    BatcherSort();
+  }
 
   return true;
 }

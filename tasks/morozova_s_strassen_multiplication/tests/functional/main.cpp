@@ -21,12 +21,10 @@ class MorozovaSStrassenMultiplicationFuncTests : public ppc::util::BaseRunFuncTe
   void SetUp() override {
     TestType params = std::get<static_cast<std::size_t>(ppc::util::GTestParamIndex::kTestParams)>(GetParam());
     int test_number = std::get<0>(params);
-    
+
     switch (test_number) {
       case 1: {
-        input_data_ = {2.0, 
-                       1.0, 2.0, 3.0, 4.0,
-                       5.0, 6.0, 7.0, 8.0};
+        input_data_ = {2.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
         break;
       }
       case 2: {
@@ -108,20 +106,20 @@ class MorozovaSStrassenMultiplicationFuncTests : public ppc::util::BaseRunFuncTe
 
     int n = static_cast<int>(input_data_[0]);
     Matrix A(n), B(n), expected(n);
-    
+
     int idx = 1;
     for (int i = 0; i < n; ++i) {
       for (int j = 0; j < n; ++j) {
         A(i, j) = input_data_[idx++];
       }
     }
-    
+
     for (int i = 0; i < n; ++i) {
       for (int j = 0; j < n; ++j) {
         B(i, j) = input_data_[idx++];
       }
     }
-    
+
     for (int i = 0; i < n; ++i) {
       for (int j = 0; j < n; ++j) {
         double sum = 0.0;
@@ -135,7 +133,7 @@ class MorozovaSStrassenMultiplicationFuncTests : public ppc::util::BaseRunFuncTe
     if (output_data.empty() || static_cast<int>(output_data[0]) != n) {
       return false;
     }
-    
+
     const double eps = 1e-6;
     for (int i = 0; i < n; ++i) {
       for (int j = 0; j < n; ++j) {
@@ -146,10 +144,10 @@ class MorozovaSStrassenMultiplicationFuncTests : public ppc::util::BaseRunFuncTe
         }
       }
     }
-    
+
     return true;
   }
-  
+
   InType GetTestInputData() final {
     return input_data_;
   }
@@ -164,23 +162,20 @@ TEST_P(MorozovaSStrassenMultiplicationFuncTests, MatrixMultiplication) {
   ExecuteTest(GetParam());
 }
 
-const std::array<TestType, 7> kTestParam = {
-  std::make_tuple(1, "2x2"),
-  std::make_tuple(2, "4x4"),
-  std::make_tuple(3, "8x8"),
-  std::make_tuple(4, "16x16"),
-  std::make_tuple(5, "32x32"),
-  std::make_tuple(6, "empty"),
-  std::make_tuple(7, "invalid_size")
-};
+const std::array<TestType, 7> kTestParam = {std::make_tuple(1, "2x2"),         std::make_tuple(2, "4x4"),
+                                            std::make_tuple(3, "8x8"),         std::make_tuple(4, "16x16"),
+                                            std::make_tuple(5, "32x32"),       std::make_tuple(6, "empty"),
+                                            std::make_tuple(7, "invalid_size")};
 
 const auto kTestTasksSEQ = ppc::util::AddFuncTask<MorozovaSStrassenMultiplicationSEQ, InType>(
     kTestParam, PPC_SETTINGS_morozova_s_strassen_multiplication);
-    
-const auto kGtestValues = ppc::util::ExpandToValues(kTestTasksSEQ);
-const auto kPerfTestName = MorozovaSStrassenMultiplicationFuncTests::PrintFuncTestName<MorozovaSStrassenMultiplicationFuncTests>;
 
-INSTANTIATE_TEST_SUITE_P(StrassenMultiplicationTests, MorozovaSStrassenMultiplicationFuncTests, kGtestValues, kPerfTestName);
+const auto kGtestValues = ppc::util::ExpandToValues(kTestTasksSEQ);
+const auto kPerfTestName =
+    MorozovaSStrassenMultiplicationFuncTests::PrintFuncTestName<MorozovaSStrassenMultiplicationFuncTests>;
+
+INSTANTIATE_TEST_SUITE_P(StrassenMultiplicationTests, MorozovaSStrassenMultiplicationFuncTests, kGtestValues,
+                         kPerfTestName);
 
 }  // namespace
 

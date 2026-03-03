@@ -16,92 +16,92 @@ bool MorozovaSStrassenMultiplicationSEQ::ValidationImpl() {
   if (GetInput().empty()) {
     return false;
   }
-  
+
   int n = static_cast<int>(GetInput()[0]);
   size_t expected_size = 1 + 2 * static_cast<size_t>(n) * n;
-  
+
   return GetInput().size() == expected_size && n > 0;
 }
 
 bool MorozovaSStrassenMultiplicationSEQ::PreProcessingImpl() {
   n_ = static_cast<int>(GetInput()[0]);
-  
+
   A_ = Matrix(n_);
   B_ = Matrix(n_);
-  
+
   int idx = 1;
   for (int i = 0; i < n_; ++i) {
     for (int j = 0; j < n_; ++j) {
       A_(i, j) = GetInput()[idx++];
     }
   }
-  
+
   for (int i = 0; i < n_; ++i) {
     for (int j = 0; j < n_; ++j) {
       B_(i, j) = GetInput()[idx++];
     }
   }
-  
+
   return true;
 }
 
 bool MorozovaSStrassenMultiplicationSEQ::RunImpl() {
   int leaf_size = 64;
-  
+
   if (n_ <= leaf_size) {
     C_ = MultiplyStandard(A_, B_);
   } else {
     C_ = MultiplyStrassen(A_, B_, leaf_size);
   }
-  
+
   return true;
 }
 
 bool MorozovaSStrassenMultiplicationSEQ::PostProcessingImpl() {
-  OutType& output = GetOutput();
+  OutType &output = GetOutput();
   output.clear();
-  
+
   output.push_back(static_cast<double>(n_));
-  
+
   for (int i = 0; i < n_; ++i) {
     for (int j = 0; j < n_; ++j) {
       output.push_back(C_(i, j));
     }
   }
-  
+
   return true;
 }
 
-Matrix MorozovaSStrassenMultiplicationSEQ::AddMatrix(const Matrix& A, const Matrix& B) const {
+Matrix MorozovaSStrassenMultiplicationSEQ::AddMatrix(const Matrix &A, const Matrix &B) const {
   int n = A.size;
   Matrix result(n);
-  
+
   for (int i = 0; i < n; ++i) {
     for (int j = 0; j < n; ++j) {
       result(i, j) = A(i, j) + B(i, j);
     }
   }
-  
+
   return result;
 }
 
-Matrix MorozovaSStrassenMultiplicationSEQ::SubtractMatrix(const Matrix& A, const Matrix& B) const {
+Matrix MorozovaSStrassenMultiplicationSEQ::SubtractMatrix(const Matrix &A, const Matrix &B) const {
   int n = A.size;
   Matrix result(n);
-  
+
   for (int i = 0; i < n; ++i) {
     for (int j = 0; j < n; ++j) {
       result(i, j) = A(i, j) - B(i, j);
     }
   }
-  
+
   return result;
 }
 
-Matrix MorozovaSStrassenMultiplicationSEQ::MultiplyStandard(const Matrix& A, const Matrix& B) const {
+Matrix MorozovaSStrassenMultiplicationSEQ::MultiplyStandard(const Matrix &A, const Matrix &B) const {
   int n = A.size;
   Matrix result(n);
-  
+
   for (int i = 0; i < n; ++i) {
     for (int j = 0; j < n; ++j) {
       double sum = 0.0;
@@ -111,15 +111,15 @@ Matrix MorozovaSStrassenMultiplicationSEQ::MultiplyStandard(const Matrix& A, con
       result(i, j) = sum;
     }
   }
-  
+
   return result;
 }
 
-void MorozovaSStrassenMultiplicationSEQ::SplitMatrix(const Matrix& M, Matrix& M11, Matrix& M12, 
-                                                      Matrix& M21, Matrix& M22) const {
+void MorozovaSStrassenMultiplicationSEQ::SplitMatrix(const Matrix &M, Matrix &M11, Matrix &M12, Matrix &M21,
+                                                     Matrix &M22) const {
   int n = M.size;
   int half = n / 2;
-  
+
   for (int i = 0; i < half; ++i) {
     for (int j = 0; j < half; ++j) {
       M11(i, j) = M(i, j);
@@ -130,12 +130,12 @@ void MorozovaSStrassenMultiplicationSEQ::SplitMatrix(const Matrix& M, Matrix& M1
   }
 }
 
-Matrix MorozovaSStrassenMultiplicationSEQ::MergeMatrices(const Matrix& M11, const Matrix& M12, 
-                                                          const Matrix& M21, const Matrix& M22) const {
+Matrix MorozovaSStrassenMultiplicationSEQ::MergeMatrices(const Matrix &M11, const Matrix &M12, const Matrix &M21,
+                                                         const Matrix &M22) const {
   int half = M11.size;
   int n = 2 * half;
   Matrix result(n);
-  
+
   for (int i = 0; i < half; ++i) {
     for (int j = 0; j < half; ++j) {
       result(i, j) = M11(i, j);
@@ -144,13 +144,13 @@ Matrix MorozovaSStrassenMultiplicationSEQ::MergeMatrices(const Matrix& M11, cons
       result(i + half, j + half) = M22(i, j);
     }
   }
-  
+
   return result;
 }
 
-Matrix MorozovaSStrassenMultiplicationSEQ::MultiplyStrassen(const Matrix& A, const Matrix& B, int leaf_size) const {
+Matrix MorozovaSStrassenMultiplicationSEQ::MultiplyStrassen(const Matrix &A, const Matrix &B, int leaf_size) const {
   int n = A.size;
-  
+
   if (n <= leaf_size) {
     return MultiplyStandard(A, B);
   }
@@ -158,15 +158,15 @@ Matrix MorozovaSStrassenMultiplicationSEQ::MultiplyStrassen(const Matrix& A, con
   if (n % 2 != 0) {
     return MultiplyStandard(A, B);
   }
-  
+
   int half = n / 2;
-  
+
   Matrix A11(half), A12(half), A21(half), A22(half);
   Matrix B11(half), B12(half), B21(half), B22(half);
-  
+
   SplitMatrix(A, A11, A12, A21, A22);
   SplitMatrix(B, B11, B12, B21, B22);
- 
+
   Matrix P1 = MultiplyStrassen(A11, SubtractMatrix(B12, B22), leaf_size);
   Matrix P2 = MultiplyStrassen(AddMatrix(A11, A12), B22, leaf_size);
   Matrix P3 = MultiplyStrassen(AddMatrix(A21, A22), B11, leaf_size);
@@ -179,7 +179,7 @@ Matrix MorozovaSStrassenMultiplicationSEQ::MultiplyStrassen(const Matrix& A, con
   Matrix C12 = AddMatrix(P1, P2);
   Matrix C21 = AddMatrix(P3, P4);
   Matrix C22 = SubtractMatrix(SubtractMatrix(AddMatrix(P5, P1), P3), P7);
-  
+
   return MergeMatrices(C11, C12, C21, C22);
 }
 

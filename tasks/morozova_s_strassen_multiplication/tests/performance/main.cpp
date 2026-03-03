@@ -31,16 +31,16 @@ class MorozovaSStrassenMultiplicationPerfTest : public ppc::util::BaseRunPerfTes
 
   bool CheckTestOutputData(OutType &output_data) final {
     int n = static_cast<int>(input_data_[0]);
-    
+
     if (output_data.empty() || static_cast<int>(output_data[0]) != n) {
       return false;
     }
-    
+
     double sum = 0.0;
     for (size_t i = 1; i < output_data.size(); ++i) {
       sum += output_data[i];
     }
-    
+
     return sum > 0.0;
   }
 
@@ -61,7 +61,8 @@ const auto kAllPerfTasks = ppc::util::MakeAllPerfTasksSEQ<InType, MorozovaSStras
 const auto kGtestValues = ppc::util::TupleToGTestValues(kAllPerfTasks);
 const auto kPerfTestName = MorozovaSStrassenMultiplicationPerfTest::CustomPerfTestName;
 
-INSTANTIATE_TEST_SUITE_P(StrassenMultiplicationPerfTests, MorozovaSStrassenMultiplicationPerfTest, kGtestValues, kPerfTestName);
+INSTANTIATE_TEST_SUITE_P(StrassenMultiplicationPerfTests, MorozovaSStrassenMultiplicationPerfTest, kGtestValues,
+                         kPerfTestName);
 
 }  // namespace
 

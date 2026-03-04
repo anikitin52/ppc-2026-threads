@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstddef>
-#include <stack>
 #include <vector>
 
 #include "morozova_s_strassen_multiplication/common/include/common.hpp"
@@ -10,15 +9,6 @@
 namespace morozova_s_strassen_multiplication {
 
 namespace {
-
-struct StrassenTask {
-  Matrix a;
-  Matrix b;
-  int leaf_size;
-  int depth;
-  std::vector<Matrix> *results;
-  int result_index;
-};
 
 Matrix AddMatrixImpl(const Matrix &a, const Matrix &b) {
   int n = a.size;
@@ -103,8 +93,14 @@ Matrix MultiplyStrassenIterative(const Matrix &a, const Matrix &b, int leaf_size
 
   int half = n / 2;
 
-  Matrix a11(half), a12(half), a21(half), a22(half);
-  Matrix b11(half), b12(half), b21(half), b22(half);
+  Matrix a11(half);
+  Matrix a12(half);
+  Matrix a21(half);
+  Matrix a22(half);
+  Matrix b11(half);
+  Matrix b12(half);
+  Matrix b21(half);
+  Matrix b22(half);
 
   SplitMatrixImpl(a, a11, a12, a21, a22);
   SplitMatrixImpl(b, b11, b12, b21, b22);

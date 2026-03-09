@@ -178,7 +178,7 @@ const std::array<TestType, 20> kTestCases = {
                    std::vector<int>{2, 2, 2}),
          8.0),
 
-     // 3D: sin(x)*cos(y)*exp(z) (уменьшенное разбиение для скорости)
+     // 3D: sin(x)*cos(y)*exp(z)
      std::make_tuple(
          20,
          MakeInput([](const std::vector<double> &x) { return std::sin(x[0]) * std::cos(x[1]) * std::exp(x[2]); },

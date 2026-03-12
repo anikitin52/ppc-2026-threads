@@ -1,3 +1,4 @@
+// redkina_a_integral_simpson_seq/omp/src/ops_omp.cpp
 #include "redkina_a_integral_simpson_seq/omp/include/ops_omp.hpp"
 
 #include <omp.h>
@@ -50,51 +51,53 @@ bool RedkinaAIntegralSimpsonOMP::PreProcessingImpl() {
 bool RedkinaAIntegralSimpsonOMP::RunImpl() {
   size_t dim = a_.size();
 
-  // Локальные копии для параллельной области (чтобы избежать захвата членов класса)
+  // Локальные копии для передачи в параллельную область
   const std::vector<double> a_local = a_;
+  const std::vector<double> b_local = b_;
   const std::vector<int> n_local = n_;
   const auto func_local = func_;
 
-  // Шаг интегрирования
+  // Шаг интегрирования по каждому измерению
   std::vector<double> h(dim);
   double h_prod = 1.0;
   for (size_t i = 0; i < dim; ++i) {
-    h[i] = (b_[i] - a_local[i]) / static_cast<double>(n_local[i]);
+    h[i] = (b_local[i] - a_local[i]) / static_cast<double>(n_local[i]);
     h_prod *= h[i];
   }
 
   // Множители для линеаризации индексов (число узлов = n[i] + 1)
-  std::vector<size_t> strides(dim);
+  std::vector<int> strides(dim);
   strides[dim - 1] = 1;
-  for (size_t i = dim - 1; i-- > 0;) {
-    strides[i] = strides[i + 1] * static_cast<size_t>(n_local[i + 1] + 1);
+  for (int i = static_cast<int>(dim) - 2; i >= 0; --i) {
+    strides[i] = strides[i + 1] * (n_local[i + 1] + 1);
   }
-  size_t total_nodes = strides[0] * static_cast<size_t>(n_local[0] + 1);
+  int total_nodes = strides[0] * (n_local[0] + 1);
 
   double total_sum = 0.0;
 
-  // Параллельный расчёт с явным указанием числа потоков
-#pragma omp parallel default(none) shared(total_nodes, h, strides, a_local, n_local, func_local, dim) \
-    reduction(+ : total_sum) num_threads(ppc::util::GetNumThreads())
+  // Параллельная область: все данные, кроме total_nodes, передаются как firstprivate
+  // (каждый поток получает собственную копию), что исключает возможные проблемы
+  // с разделяемым доступом к нетривиальным объектам.
+#pragma omp parallel default(none) firstprivate(h, strides, a_local, n_local, func_local, dim) shared(total_nodes) \
+    reduction(+ : total_sum)
   {
     std::vector<int> indices(dim);
     std::vector<double> point(dim);
 
 #pragma omp for schedule(static)
-    for (size_t idx = 0; idx < total_nodes; ++idx) {
-      // Разложение линейного индекса
-      size_t remainder = idx;
+    for (int idx = 0; idx < total_nodes; ++idx) {
+      int remainder = idx;
       for (size_t d = 0; d < dim; ++d) {
-        indices[d] = static_cast<int>(remainder / strides[d]);
+        indices[d] = remainder / strides[d];
         remainder %= strides[d];
       }
 
-      // Вычисление координат и весов Симпсона
       double w_prod = 1.0;
       for (size_t d = 0; d < dim; ++d) {
         int i_idx = indices[d];
         point[d] = a_local[d] + i_idx * h[d];
-        int w;
+
+        int w = 0;
         if (i_idx == 0 || i_idx == n_local[d]) {
           w = 1;
         } else if (i_idx % 2 == 1) {

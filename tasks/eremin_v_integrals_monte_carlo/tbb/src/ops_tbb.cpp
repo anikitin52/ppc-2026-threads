@@ -56,28 +56,26 @@ bool EreminVIntegralsMonteCarloTBB::RunImpl() {
     volume *= (b - a);
   }
 
-  const double sum = tbb::parallel_reduce(
-      tbb::blocked_range<int>(0, samples), 0.0,
-      [&](const tbb::blocked_range<int> &range, double local_sum) {
-        // Thread-local RNG and distributions for this range chunk.
-        std::mt19937 local_gen(std::random_device{}() + static_cast<unsigned>(range.begin()));
+  const double sum = tbb::parallel_reduce(tbb::blocked_range<int>(0, samples), 0.0,
+                                          [&](const tbb::blocked_range<int> &range, double local_sum) {
+    // Thread-local RNG and distributions for this range chunk.
+    std::mt19937 local_gen(std::random_device{}() + static_cast<unsigned>(range.begin()));
 
-        std::vector<std::uniform_real_distribution<double>> local_distributions;
-        local_distributions.reserve(dimension);
-        for (const auto &[a, b] : bounds) {
-          local_distributions.emplace_back(a, b);
-        }
+    std::vector<std::uniform_real_distribution<double>> local_distributions;
+    local_distributions.reserve(dimension);
+    for (const auto &[a, b] : bounds) {
+      local_distributions.emplace_back(a, b);
+    }
 
-        std::vector<double> point(dimension);
-        for (int i = range.begin(); i < range.end(); ++i) {
-          for (std::size_t dim = 0; dim < dimension; ++dim) {
-            point[dim] = local_distributions[dim](local_gen);
-          }
-          local_sum += func(point);
-        }
-        return local_sum;
-      },
-      std::plus<double>{});
+    std::vector<double> point(dimension);
+    for (int i = range.begin(); i < range.end(); ++i) {
+      for (std::size_t dim = 0; dim < dimension; ++dim) {
+        point[dim] = local_distributions[dim](local_gen);
+      }
+      local_sum += func(point);
+    }
+    return local_sum;
+  }, std::plus<double>{});
 
   GetOutput() = volume * (sum / static_cast<double>(samples));
   return true;
@@ -88,4 +86,3 @@ bool EreminVIntegralsMonteCarloTBB::PostProcessingImpl() {
 }
 
 }  // namespace eremin_v_integrals_monte_carlo
-

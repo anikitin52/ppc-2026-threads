@@ -20,4 +20,3 @@ class EreminVIntegralsMonteCarloTBB : public BaseTask {
 };
 
 }  // namespace eremin_v_integrals_monte_carlo
-

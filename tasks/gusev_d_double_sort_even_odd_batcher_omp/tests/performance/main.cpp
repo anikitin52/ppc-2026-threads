@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <iostream>
 #include <random>
+#include <utility>
 #include <vector>
 
 #include "gusev_d_double_sort_even_odd_batcher_omp/common/include/common.hpp"
@@ -25,6 +26,20 @@ struct PerfRunResult {
   const char *failed_stage = "";
   OutType output;
   std::chrono::duration<double> elapsed{};
+
+  static PerfRunResult MakeFailure(const char *stage) {
+    PerfRunResult result;
+    result.failed_stage = stage;
+    return result;
+  }
+
+  static PerfRunResult MakeSuccess(OutType result_output, std::chrono::duration<double> result_elapsed) {
+    PerfRunResult result;
+    result.ok = true;
+    result.output = std::move(result_output);
+    result.elapsed = result_elapsed;
+    return result;
+  }
 };
 
 InType GenerateRandomInput(size_t size, uint64_t seed) {
@@ -73,27 +88,23 @@ InType GenerateDuplicateHeavyInput(size_t size) {
 PerfRunResult ExecutePerfCase(const InType &input) {
   DoubleSortEvenOddBatcherOMP task(input);
   if (!task.Validation()) {
-    return {.failed_stage = "Validation"};
+    return PerfRunResult::MakeFailure("Validation");
   }
   if (!task.PreProcessing()) {
-    return {.failed_stage = "PreProcessing"};
+    return PerfRunResult::MakeFailure("PreProcessing");
   }
 
   const auto started = std::chrono::steady_clock::now();
   if (!task.Run()) {
-    return {.failed_stage = "Run"};
+    return PerfRunResult::MakeFailure("Run");
   }
   const auto finished = std::chrono::steady_clock::now();
 
   if (!task.PostProcessing()) {
-    return {.failed_stage = "PostProcessing"};
+    return PerfRunResult::MakeFailure("PostProcessing");
   }
 
-  return {
-      .ok = true,
-      .output = task.GetOutput(),
-      .elapsed = std::chrono::duration<double>(finished - started),
-  };
+  return PerfRunResult::MakeSuccess(task.GetOutput(), std::chrono::duration<double>(finished - started));
 }
 
 void RunPerfCase(const InType &input) {

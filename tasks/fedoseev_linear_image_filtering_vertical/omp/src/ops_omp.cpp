@@ -11,6 +11,12 @@
 
 namespace fedoseev_linear_image_filtering_vertical {
 
+static int GetPixel(const std::vector<int> &src, int w, int h, int col, int row) {
+  col = std::clamp(col, 0, w - 1);
+  row = std::clamp(row, 0, h - 1);
+  return src[static_cast<size_t>(row) * static_cast<size_t>(w) + static_cast<size_t>(col)];
+}
+
 LinearImageFilteringVerticalOMP::LinearImageFilteringVerticalOMP(const InType &in) {
   SetTypeOfTask(GetStaticTypeOfTask());
   GetInput() = in;
@@ -49,15 +55,10 @@ bool LinearImageFilteringVerticalOMP::RunImpl() {
 
   const std::array<std::array<int, 3>, 3> kernel = {{{{1, 2, 1}}, {{2, 4, 2}}, {{1, 2, 1}}}};
   const int kernel_sum = 16;
-  auto get_pixel = [&](int col, int row) -> int {
-    col = std::clamp(col, 0, w - 1);
-    row = std::clamp(row, 0, h - 1);
-    return src[(static_cast<size_t>(row) * static_cast<size_t>(w)) + static_cast<size_t>(col)];
-  };
-
   const int block_width = 64;
 
-#pragma omp parallel for schedule(static) shared(w, h, src, dst, kernel, kernel_sum)
+#pragma omp parallel for schedule(static) default(none) shared(w, h, src, dst, kernel, kernel_sum) \
+    firstprivate(block_width)
   for (int col_start = 0; col_start < w; col_start += block_width) {
     int col_end = std::min(col_start + block_width, w);
     for (int row = 0; row < h; ++row) {
@@ -67,8 +68,8 @@ bool LinearImageFilteringVerticalOMP::RunImpl() {
           for (int kx = 0; kx < 3; ++kx) {
             int px = col + kx - 1;
             int py = row + ky - 1;
-            int pixel = get_pixel(px, py);
-            sum += pixel * kernel[ky][kx];
+            int pixel = GetPixel(src, w, h, px, py);
+            sum += pixel * kernel.at(ky).at(kx);
           }
         }
         dst[(static_cast<size_t>(row) * static_cast<size_t>(w)) + static_cast<size_t>(col)] = sum / kernel_sum;

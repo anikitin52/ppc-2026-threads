@@ -133,7 +133,7 @@ bool SamoylenkoIIntegralTrapezoidSTL::RunImpl() {
     int64_t start = (points * thr) / num_threads;
     int64_t end = (points * (thr + 1)) / num_threads;
 
-    threads[thr] = std::thread([&, thr, start, end]() {
+    threads[thr] = std::thread([&h, &dimensions, &dim_sizes, &in, &integral_function, thr, start, end, &local_sums]() {
       local_sums[thr] = GetLocalSum(start, end, dimensions, dim_sizes, h, in, integral_function);
     });
   }

@@ -47,8 +47,8 @@ TEST_P(RomanovAPerfTestThreads, GaussFilter) {
 namespace {
 
 const auto kAllPerfTasks =
-    ppc::util::MakeAllPerfTasks<InType, RomanovAGaussBlockOMP, RomanovAGaussBlockSEQ, RomanovAGaussBlockSTL, RomanovAGaussBlockTBB>(
-        PPC_SETTINGS_romanov_a_gauss_block);
+    ppc::util::MakeAllPerfTasks<InType, RomanovAGaussBlockOMP, RomanovAGaussBlockSEQ, RomanovAGaussBlockSTL,
+                                RomanovAGaussBlockTBB>(PPC_SETTINGS_romanov_a_gauss_block);
 
 const auto kGtestValues = ppc::util::TupleToGTestValues(kAllPerfTasks);
 

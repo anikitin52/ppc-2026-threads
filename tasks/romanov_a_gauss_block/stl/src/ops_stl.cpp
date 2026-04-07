@@ -4,10 +4,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <thread>
 #include <tuple>
 #include <vector>
-
-#include <thread>
 
 #include "romanov_a_gauss_block/common/include/common.hpp"
 
@@ -86,6 +85,8 @@ void ProcessPartBlock(const std::vector<uint8_t> &initial_picture, std::vector<u
 
 }  // namespace
 
+#include <iostream>
+
 bool RomanovAGaussBlockSTL::RunImpl() {
   const int width = std::get<0>(GetInput());
   const int height = std::get<1>(GetInput());
@@ -96,18 +97,33 @@ bool RomanovAGaussBlockSTL::RunImpl() {
   const int num_row_blocks = height / kBlockSize;
   const int num_col_blocks = width / kBlockSize;
 
-  for (int bi = 0; bi < num_row_blocks; ++bi) {
-    for (int bj = 0; bj < num_col_blocks; ++bj) {
-      ProcessFullBlock(initial_picture, result_picture, width, height, bi * kBlockSize, bj * kBlockSize);
+  const int num_threads = ppc::util::GetNumThreads();
+  std::vector<std::thread> threads;
+
+  auto Processing = [&](int current_part) {
+    int left_border_r = (num_row_blocks * current_part) / num_threads;
+    int right_border_r = (num_row_blocks * (current_part + 1)) / num_threads;
+    for (int bi = left_border_r; bi < right_border_r; ++bi) {
+      for (int bj = 0; bj < num_col_blocks; ++bj) {
+        ProcessFullBlock(initial_picture, result_picture, width, height, bi * kBlockSize, bj * kBlockSize);
+      }
     }
+    for (int bi = left_border_r; bi < right_border_r; ++bi) {
+      ProcessPartBlock(initial_picture, result_picture, width, height, bi * kBlockSize, width - (width % kBlockSize));
+    }
+    int left_border_l = (num_col_blocks * current_part) / num_threads;
+    int right_border_l = (num_col_blocks * (current_part + 1)) / num_threads;
+    for (int bj = left_border_l; bj < right_border_l; ++bj) {
+      ProcessPartBlock(initial_picture, result_picture, width, height, height - (height % kBlockSize), bj * kBlockSize);
+    }
+  };
+
+  for (int tid = 0; tid < num_threads; tid++) {
+    threads.emplace_back(Processing, tid);
   }
 
-  for (int bi = 0; bi < num_row_blocks; ++bi) {
-    ProcessPartBlock(initial_picture, result_picture, width, height, bi * kBlockSize, width - (width % kBlockSize));
-  }
-
-  for (int bj = 0; bj < num_col_blocks; ++bj) {
-    ProcessPartBlock(initial_picture, result_picture, width, height, height - (height % kBlockSize), bj * kBlockSize);
+  for (auto &th : threads) {
+    th.join();
   }
 
   ProcessPartBlock(initial_picture, result_picture, width, height, height - (height % kBlockSize),

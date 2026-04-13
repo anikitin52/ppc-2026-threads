@@ -193,4 +193,8 @@ bool RemizovKDenseMatrixMultiplicationCannonAlgorithmTbb::RunImpl() {
   return true;
 }
 
+bool RemizovKDenseMatrixMultiplicationCannonAlgorithmTbb::PostProcessingImpl() {
+  return true;
+}
+
 }  // namespace remizov_k_dense_matrix_multiplication_cannon_algorithm

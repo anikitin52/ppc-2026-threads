@@ -39,7 +39,9 @@ double ComputeDotProduct_STL(const std::vector<double> &v1, const std::vector<do
     });
   }
 
-  for (auto &t : threads) t.join();
+  for (auto &t : threads) {
+    t.join();
+  }
   return std::accumulate(partial_results.begin(), partial_results.end(), 0.0);
 }
 
@@ -60,7 +62,9 @@ void ComputeAp_STL(const std::vector<double> &matrix, const std::vector<double> 
       }
     });
   }
-  for (auto &t : threads) t.join();
+  for (auto &t : threads) {
+    t.join();
+  }
 }
 
 double UpdateResultAndResidual_STL(std::vector<double> &result, std::vector<double> &r, const std::vector<double> &p,
@@ -84,7 +88,9 @@ double UpdateResultAndResidual_STL(std::vector<double> &result, std::vector<doub
     });
   }
 
-  for (auto &t : threads) t.join();
+  for (auto &t : threads) {
+    t.join();
+  }
   return std::accumulate(partial_rs_new.begin(), partial_rs_new.end(), 0.0);
 }
 
@@ -101,7 +107,9 @@ void UpdateP_STL(std::vector<double> &p, const std::vector<double> &r, double be
       }
     });
   }
-  for (auto &t : threads) t.join();
+  for (auto &t : threads) {
+    t.join();
+  }
 }
 
 double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2) {
@@ -240,7 +248,9 @@ bool SmyshlaevASleCgTaskSTL::RunParallel(int num_threads) {
       partial_rs[i] = local_rs;
     });
   }
-  for (auto &t : threads) t.join();
+  for (auto &t : threads) {
+    t.join();
+  }
   double rs_old = std::accumulate(partial_rs.begin(), partial_rs.end(), 0.0);
 
   const double epsilon = 1e-9;

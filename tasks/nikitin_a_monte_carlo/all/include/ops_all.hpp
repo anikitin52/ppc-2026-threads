@@ -5,18 +5,21 @@
 
 namespace nikitin_a_monte_carlo {
 
-class NikitinAMonteCarloSEQ : public BaseTask {
+class NikitinAMonteCarloALL : public BaseTask {
  public:
   static constexpr ppc::task::TypeOfTask GetStaticTypeOfTask() {
-    return ppc::task::TypeOfTask::kSEQ;
+    return ppc::task::TypeOfTask::kALL;
   }
-  explicit NikitinAMonteCarloSEQ(const InType &in);
+  explicit NikitinAMonteCarloALL(const InType &in);
 
  private:
   bool ValidationImpl() override;
   bool PreProcessingImpl() override;
   bool RunImpl() override;
   bool PostProcessingImpl() override;
+
+  // Выбор оптимальной технологии
+  ppc::task::TypeOfTask SelectBestTechnology() const;
 };
 
 }  // namespace nikitin_a_monte_carlo

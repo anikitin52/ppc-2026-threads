@@ -17,9 +17,6 @@ class NikitinAMonteCarloALL : public BaseTask {
   bool PreProcessingImpl() override;
   bool RunImpl() override;
   bool PostProcessingImpl() override;
-
-  // Выбор оптимальной технологии
-  ppc::task::TypeOfTask SelectBestTechnology() const;
 };
 
 }  // namespace nikitin_a_monte_carlo

@@ -1,5 +1,9 @@
 #include "nikitin_a_monte_carlo/all/include/ops_all.hpp"
 
+#include <mpi.h>
+#include <omp.h>
+#include <tbb/tbb.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -8,266 +12,202 @@
 #include <thread>
 #include <vector>
 
-// Проверка доступности технологий
-#if defined(_OPENMP)
-#  include <omp.h>
-#  define HAS_OMP 1
-#else
-#  define HAS_OMP 0
-#endif
-
-#ifdef __TBB_VERSION
-#  include <oneapi/tbb.h>
-#  define HAS_TBB 1
-#else
-#  define HAS_TBB 0
-#endif
-
 #include "nikitin_a_monte_carlo/common/include/common.hpp"
 
 namespace nikitin_a_monte_carlo {
 
 namespace {
-// Вспомогательная функция для вычисления значения тестовой функции
-double EvaluateFunction(const std::vector<double> &point, FunctionType type) {
-  if (point.empty()) {
-    return 0.0;
-  }
-
+double EvaluateFunction(const std::vector<double>& point, FunctionType type) {
+  if (point.empty()) return 0.0;
   switch (type) {
-    case FunctionType::kConstant:
-      return 1.0;
-    case FunctionType::kLinear:
-      return point.at(0);
-    case FunctionType::kProduct:
-      if (point.size() < 2) {
-        return 0.0;
-      }
-      return point.at(0) * point.at(1);
-    case FunctionType::kQuadratic:
-      if (point.size() < 2) {
-        return 0.0;
-      }
-      return (point.at(0) * point.at(0)) + (point.at(1) * point.at(1));
-    case FunctionType::kExponential:
-      return std::exp(point.at(0));
-    default:
-      return 0.0;
+    case FunctionType::kConstant: return 1.0;
+    case FunctionType::kLinear: return point[0];
+    case FunctionType::kProduct: return (point.size() >= 2) ? point[0] * point[1] : 0.0;
+    case FunctionType::kQuadratic: return (point.size() >= 2) ? point[0] * point[0] + point[1] * point[1] : 0.0;
+    case FunctionType::kExponential: return std::exp(point[0]);
+    default: return 0.0;
   }
 }
 
-// Генерация квазислучайной последовательности Кронекера
 double KroneckerSequence(int index, int dimension) {
   const std::array<double, 10> primes = {2.0, 3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0, 23.0, 29.0};
-  double alpha = std::sqrt(primes.at(static_cast<std::size_t>(dimension % 10)));
+  double alpha = std::sqrt(primes[dimension % 10]);
   alpha = alpha - std::floor(alpha);
   return std::fmod(static_cast<double>(index) * alpha, 1.0);
 }
 
-// ============ SEQ РЕАЛИЗАЦИЯ ============
-double ComputeMonteCarloSEQ(int num_points, std::size_t dim, const std::vector<double> &lower_bounds,
-                            const std::vector<double> &upper_bounds, FunctionType func_type) {
+// Вычисление одного блока точек (используется на всех уровнях)
+double ComputeBlock(int start, int end, std::size_t dim,
+                    const std::vector<double>& lower, const std::vector<double>& upper,
+                    FunctionType func) {
   double sum = 0.0;
   std::vector<double> point(dim);
-
-  for (int i = 0; i < num_points; ++i) {
-    for (std::size_t j = 0; j < dim; ++j) {
-      double u = KroneckerSequence(i, static_cast<int>(j));
-      point[j] = lower_bounds[j] + (u * (upper_bounds[j] - lower_bounds[j]));
-    }
-    sum += EvaluateFunction(point, func_type);
-  }
-
-  return sum;
-}
-
-// ============ OMP РЕАЛИЗАЦИЯ ============
-#if HAS_OMP
-double ComputeMonteCarloOMP(int num_points, std::size_t dim, const std::vector<double> &lower_bounds,
-                            const std::vector<double> &upper_bounds, FunctionType func_type) {
-  double sum = 0.0;
-
-#  pragma omp parallel for reduction(+ : sum) schedule(static)
-  for (int i = 0; i < num_points; ++i) {
-    std::vector<double> point(dim);
-    for (std::size_t j = 0; j < dim; ++j) {
-      double u = KroneckerSequence(i, static_cast<int>(j));
-      point[j] = lower_bounds[j] + (u * (upper_bounds[j] - lower_bounds[j]));
-    }
-    sum += EvaluateFunction(point, func_type);
-  }
-
-  return sum;
-}
-#endif
-
-// ============ TBB РЕАЛИЗАЦИЯ ============
-#if HAS_TBB
-double ComputeMonteCarloTBB(int num_points, std::size_t dim, const std::vector<double> &lower_bounds,
-                            const std::vector<double> &upper_bounds, FunctionType func_type) {
-  return tbb::parallel_reduce(tbb::blocked_range<int>(0, num_points), 0.0,
-                              [&](const tbb::blocked_range<int> &range, double local_sum) -> double {
-    std::vector<double> point(dim);
-    for (int i = range.begin(); i != range.end(); ++i) {
-      for (std::size_t j = 0; j < dim; ++j) {
-        double u = KroneckerSequence(i, static_cast<int>(j));
-        point[j] = lower_bounds[j] + (u * (upper_bounds[j] - lower_bounds[j]));
-      }
-      local_sum += EvaluateFunction(point, func_type);
-    }
-    return local_sum;
-  }, [](double x, double y) -> double { return x + y; });
-}
-#endif
-
-// ============ STL РЕАЛИЗАЦИЯ ============
-double ComputePartialSumSTL(int start, int end, std::size_t dim, const std::vector<double> &lower_bounds,
-                            const std::vector<double> &upper_bounds, FunctionType func_type) {
-  double local_sum = 0.0;
-  std::vector<double> point(dim);
-
   for (int i = start; i < end; ++i) {
     for (std::size_t j = 0; j < dim; ++j) {
       double u = KroneckerSequence(i, static_cast<int>(j));
-      point[j] = lower_bounds[j] + (u * (upper_bounds[j] - lower_bounds[j]));
+      point[j] = lower[j] + u * (upper[j] - lower[j]);
     }
-    local_sum += EvaluateFunction(point, func_type);
+    sum += EvaluateFunction(point, func);
   }
-
-  return local_sum;
+  return sum;
 }
 
-double ComputeMonteCarloSTL(int num_points, std::size_t dim, const std::vector<double> &lower_bounds,
-                            const std::vector<double> &upper_bounds, FunctionType func_type) {
-  unsigned int num_threads = std::thread::hardware_concurrency();
-  if (num_threads == 0) {
-    num_threads = 2U;
-  }
+double ComputeBlockTBB(int start, int end, std::size_t dim,
+                       const std::vector<double>& lower, const std::vector<double>& upper,
+                       FunctionType func) {
+  return tbb::parallel_reduce(
+      tbb::blocked_range<int>(start, end), 0.0,
+      [&](const tbb::blocked_range<int>& r, double local) {
+        std::vector<double> point(dim);
+        for (int i = r.begin(); i != r.end(); ++i) {
+          for (std::size_t j = 0; j < dim; ++j) {
+            double u = KroneckerSequence(i, static_cast<int>(j));
+            point[j] = lower[j] + u * (upper[j] - lower[j]);
+          }
+          local += EvaluateFunction(point, func);
+        }
+        return local;
+      },
+      [](double x, double y) { return x + y; });
+}
 
-  const auto unsigned_num_points = static_cast<unsigned int>(num_points);
-  num_threads = std::min(num_threads, unsigned_num_points);
-
-  if (num_threads == 0) {
-    num_threads = 1U;
-  }
-
-  std::vector<std::future<double>> futures;
-  const int points_per_thread = num_points / static_cast<int>(num_threads);
-  const int remainder = num_points % static_cast<int>(num_threads);
-
-  int current_start = 0;
-
-  for (unsigned int thread_idx = 0; thread_idx < num_threads; ++thread_idx) {
-    const int start = current_start;
-    const int thread_idx_signed = static_cast<int>(thread_idx);
-    const int end = start + points_per_thread + ((thread_idx_signed < remainder) ? 1 : 0);
-    current_start = end;
-
-    futures.push_back(
-        std::async(std::launch::async, ComputePartialSumSTL, start, end, dim, lower_bounds, upper_bounds, func_type));
-  }
-
+double ComputeBlockOMP(int start, int end, std::size_t dim,
+                       const std::vector<double>& lower, const std::vector<double>& upper,
+                       FunctionType func) {
   double sum = 0.0;
-  for (auto &future : futures) {
-    sum += future.get();
+  #pragma omp parallel for reduction(+ : sum) schedule(static)
+  for (int i = start; i < end; ++i) {
+    std::vector<double> point(dim);
+    for (std::size_t j = 0; j < dim; ++j) {
+      double u = KroneckerSequence(i, static_cast<int>(j));
+      point[j] = lower[j] + u * (upper[j] - lower[j]);
+    }
+    sum += EvaluateFunction(point, func);
   }
-
   return sum;
+}
+
+double ComputeBlockSTL(int start, int end, std::size_t dim,
+                       const std::vector<double>& lower, const std::vector<double>& upper,
+                       FunctionType func) {
+  if (start >= end) return 0.0;
+  
+  unsigned int num_threads = std::thread::hardware_concurrency();
+  if (num_threads == 0) num_threads = 2U;
+  
+  int total = end - start;
+  num_threads = std::min(num_threads, static_cast<unsigned int>(total));
+  if (num_threads == 0) num_threads = 1U;
+  
+  std::vector<std::future<double>> futures;
+  int pts_per_thread = total / static_cast<int>(num_threads);
+  int remainder = total % static_cast<int>(num_threads);
+  int current = start;
+  
+  for (unsigned int tid = 0; tid < num_threads; ++tid) {
+    int block_end = current + pts_per_thread + (static_cast<int>(tid) < remainder ? 1 : 0);
+    futures.push_back(std::async(std::launch::async, ComputeBlock, current, block_end, dim, lower, upper, func));
+    current = block_end;
+  }
+  
+  double sum = 0.0;
+  for (auto& f : futures) sum += f.get();
+  return sum;
+}
+
+// Оптимальная стратегия для одного процесса MPI
+double ComputeOnProcess(int num_points, std::size_t dim,
+                        const std::vector<double>& lower, const std::vector<double>& upper,
+                        FunctionType func) {
+  // Автовыбор: TBB (task-based) > OMP (loop-based) > STL (threads)
+  
+  int min_block_size = 10000;  // Порог для переключения
+  bool use_tbb = (num_points > min_block_size);
+  
+  if (num_points < 1000) {
+    return ComputeBlock(0, num_points, dim, lower, upper, func);
+  }
+  
+#ifdef __TBB_VERSION
+  if (use_tbb) {
+    return ComputeBlockTBB(0, num_points, dim, lower, upper, func);
+  }
+#endif
+
+#ifdef _OPENMP
+  if (use_tbb && num_points > 50000) {
+    return ComputeBlockOMP(0, num_points, dim, lower, upper, func);
+  }
+#endif
+
+  return ComputeBlockSTL(0, num_points, dim, lower, upper, func);
 }
 
 }  // namespace
 
-// ============ КЛАСС ALL ============
-NikitinAMonteCarloALL::NikitinAMonteCarloALL(const InType &in) {
+NikitinAMonteCarloALL::NikitinAMonteCarloALL(const InType& in) {
   SetTypeOfTask(GetStaticTypeOfTask());
   GetInput() = in;
   GetOutput() = 0.0;
 }
 
-ppc::task::TypeOfTask NikitinAMonteCarloALL::SelectBestTechnology() const {
-// Приоритет выбора: TBB → OpenMP → STL → SEQ
-#if HAS_TBB
-  return ppc::task::TypeOfTask::kTBB;
-#elif HAS_OMP
-  return ppc::task::TypeOfTask::kOMP;
-#else
-  // STL доступен всегда (C++11 и выше)
-  return ppc::task::TypeOfTask::kSTL;
-#endif
-}
-
 bool NikitinAMonteCarloALL::ValidationImpl() {
-  const auto &[lower_bounds, upper_bounds, num_points, func_type] = GetInput();
-
-  if (lower_bounds.empty() || upper_bounds.empty()) {
-    return false;
-  }
-
-  if (lower_bounds.size() != upper_bounds.size()) {
-    return false;
-  }
-
-  for (std::size_t i = 0; i < lower_bounds.size(); ++i) {
-    if (lower_bounds[i] >= upper_bounds[i]) {
-      return false;
-    }
-  }
-
-  return num_points > 0;
+  const auto& [low, up, n, func] = GetInput();
+  if (low.empty() || up.empty() || low.size() != up.size()) return false;
+  for (std::size_t i = 0; i < low.size(); ++i) if (low[i] >= up[i]) return false;
+  return n > 0;
 }
 
-bool NikitinAMonteCarloALL::PreProcessingImpl() {
-  return true;
-}
+bool NikitinAMonteCarloALL::PreProcessingImpl() { return true; }
+bool NikitinAMonteCarloALL::PostProcessingImpl() { return true; }
 
 bool NikitinAMonteCarloALL::RunImpl() {
+  int rank = 0;
+  int world_size = 1;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  
   const auto input = GetInput();
-  const auto &lower_bounds = std::get<0>(input);
-  const auto &upper_bounds = std::get<1>(input);
-  const int num_points = std::get<2>(input);
+  const auto& lower = std::get<0>(input);
+  const auto& upper = std::get<1>(input);
+  int total_points = std::get<2>(input);
   const FunctionType func_type = std::get<3>(input);
-
-  const std::size_t dim = lower_bounds.size();
-
-  // Вычисление объема области интегрирования
+  
+  const std::size_t dim = lower.size();
+  
+  // Вычисление объема
   double volume = 1.0;
-  for (std::size_t i = 0; i < dim; ++i) {
-    volume *= (upper_bounds[i] - lower_bounds[i]);
+  for (std::size_t i = 0; i < dim; ++i) volume *= (upper[i] - lower[i]);
+  
+  // === MPI: распределение точек между процессами ===
+  int points_per_proc = total_points / world_size;
+  int remainder_points = total_points % world_size;
+  
+  int start = rank * points_per_proc + std::min(rank, remainder_points);
+  int end = start + points_per_proc + (rank < remainder_points ? 1 : 0);
+  int local_points = end - start;
+  
+  // === Локальные вычисления (с использованием лучшей технологии) ===
+  double local_sum = ComputeOnProcess(local_points, dim, lower, upper, func_type);
+  
+  // === MPI: сбор результатов ===
+  double global_sum = 0.0;
+  MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+  
+  double result = 0.0;
+  if (rank == 0) {
+    result = volume * global_sum / static_cast<double>(total_points);
+    GetOutput() = result;
   }
-
-  // Автоматический выбор технологии
-  const auto best_tech = SelectBestTechnology();
-  double sum = 0.0;
-
-  switch (best_tech) {
-    case ppc::task::TypeOfTask::kTBB:
-#if HAS_TBB
-      sum = ComputeMonteCarloTBB(num_points, dim, lower_bounds, upper_bounds, func_type);
-#endif
-      break;
-
-    case ppc::task::TypeOfTask::kOMP:
-#if HAS_OMP
-      sum = ComputeMonteCarloOMP(num_points, dim, lower_bounds, upper_bounds, func_type);
-#endif
-      break;
-
-    case ppc::task::TypeOfTask::kSTL:
-      sum = ComputeMonteCarloSTL(num_points, dim, lower_bounds, upper_bounds, func_type);
-      break;
-
-    default:
-      sum = ComputeMonteCarloSEQ(num_points, dim, lower_bounds, upper_bounds, func_type);
-      break;
+  
+  // Синхронизация
+  MPI_Bcast(&result, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Barrier(MPI_COMM_WORLD);
+  
+  if (rank != 0) {
+    GetOutput() = result;
   }
-
-  const double result = volume * sum / static_cast<double>(num_points);
-  GetOutput() = result;
-
-  return true;
-}
-
-bool NikitinAMonteCarloALL::PostProcessingImpl() {
+  
   return true;
 }
 

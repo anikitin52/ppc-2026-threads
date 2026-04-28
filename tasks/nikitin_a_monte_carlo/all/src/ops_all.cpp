@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <future>
@@ -17,6 +18,9 @@
 namespace nikitin_a_monte_carlo {
 
 namespace {
+
+// ============ БАЗОВЫЕ ФУНКЦИИ ============
+
 double EvaluateFunction(const std::vector<double> &point, FunctionType type) {
   if (point.empty()) {
     return 0.0;
@@ -44,115 +48,111 @@ double KroneckerSequence(int index, int dimension) {
   return std::fmod(static_cast<double>(index) * alpha, 1.0);
 }
 
-// Вычисление одного блока точек (используется на всех уровнях)
-double ComputeBlock(int start, int end, std::size_t dim, const std::vector<double> &lower,
-                    const std::vector<double> &upper, FunctionType func) {
-  double sum = 0.0;
-  std::vector<double> point(dim);
-  for (int i = start; i < end; ++i) {
-    for (std::size_t j = 0; j < dim; ++j) {
-      double u = KroneckerSequence(i, static_cast<int>(j));
-      point[j] = lower[j] + u * (upper[j] - lower[j]);
-    }
-    sum += EvaluateFunction(point, func);
-  }
-  return sum;
-}
-
+// ============ TBB РЕАЛИЗАЦИЯ ============
+#ifdef __TBB_VERSION
 double ComputeBlockTBB(int start, int end, std::size_t dim, const std::vector<double> &lower,
-                       const std::vector<double> &upper, FunctionType func) {
+                       const std::vector<double> &upper, FunctionType func_type) {
   return tbb::parallel_reduce(tbb::blocked_range<int>(start, end), 0.0,
-                              [&](const tbb::blocked_range<int> &r, double local) {
+                              [&](const tbb::blocked_range<int> &range, double local_sum) {
     std::vector<double> point(dim);
-    for (int i = r.begin(); i != r.end(); ++i) {
+    for (int i = range.begin(); i != range.end(); ++i) {
       for (std::size_t j = 0; j < dim; ++j) {
         double u = KroneckerSequence(i, static_cast<int>(j));
         point[j] = lower[j] + u * (upper[j] - lower[j]);
       }
-      local += EvaluateFunction(point, func);
+      local_sum += EvaluateFunction(point, func_type);
     }
-    return local;
+    return local_sum;
   }, [](double x, double y) { return x + y; });
 }
+#endif
 
+// ============ OPENMP РЕАЛИЗАЦИЯ ============
+#ifdef _OPENMP
 double ComputeBlockOMP(int start, int end, std::size_t dim, const std::vector<double> &lower,
-                       const std::vector<double> &upper, FunctionType func) {
+                       const std::vector<double> &upper, FunctionType func_type) {
   double sum = 0.0;
-#pragma omp parallel for reduction(+ : sum) schedule(static)
+#  pragma omp parallel for reduction(+ : sum) schedule(static)
   for (int i = start; i < end; ++i) {
     std::vector<double> point(dim);
     for (std::size_t j = 0; j < dim; ++j) {
       double u = KroneckerSequence(i, static_cast<int>(j));
       point[j] = lower[j] + u * (upper[j] - lower[j]);
     }
-    sum += EvaluateFunction(point, func);
+    sum += EvaluateFunction(point, func_type);
   }
   return sum;
 }
+#endif
 
-double ComputeBlockSTL(int start, int end, std::size_t dim, const std::vector<double> &lower,
-                       const std::vector<double> &upper, FunctionType func) {
-  if (start >= end) {
+// ============ ГИБРИДНЫЙ ВЫЧИСЛИТЕЛЬ (MPI + выбор технологии) ============
+
+double ComputeHybrid(int num_points, std::size_t dim, const std::vector<double> &lower,
+                     const std::vector<double> &upper, FunctionType func_type, int rank, int num_procs) {
+  // Разбиваем точки между MPI процессами
+  int local_start = rank * (num_points / num_procs) + std::min(rank, num_points % num_procs);
+  int local_end = local_start + (num_points / num_procs) + (rank < (num_points % num_procs) ? 1 : 0);
+  int local_n = local_end - local_start;
+
+  if (local_n <= 0) {
     return 0.0;
   }
 
+  double local_sum = 0.0;
+
+  // Выбираем лучшую технологию для локальных вычислений
+  // Приоритет: TBB (task-based) > OpenMP > STL threads
+
+#ifdef __TBB_VERSION
+  // Используем TBB для локальных вычислений
+  local_sum = ComputeBlockTBB(local_start, local_end, dim, lower, upper, func_type);
+#elif defined(_OPENMP)
+  // OpenMP для локальных вычислений
+  local_sum = ComputeBlockOMP(local_start, local_end, dim, lower, upper, func_type);
+#else
+  // STL threads для локальных вычислений
   unsigned int num_threads = std::thread::hardware_concurrency();
   if (num_threads == 0) {
-    num_threads = 2U;
+    num_threads = 2;
   }
-
-  int total = end - start;
-  num_threads = std::min(num_threads, static_cast<unsigned int>(total));
+  num_threads = std::min(num_threads, static_cast<unsigned int>(local_n));
   if (num_threads == 0) {
-    num_threads = 1U;
+    num_threads = 1;
   }
 
   std::vector<std::future<double>> futures;
-  int pts_per_thread = total / static_cast<int>(num_threads);
-  int remainder = total % static_cast<int>(num_threads);
-  int current = start;
+  int block = local_n / static_cast<int>(num_threads);
+  int rem = local_n % static_cast<int>(num_threads);
+  int cur = local_start;
 
-  for (unsigned int tid = 0; tid < num_threads; ++tid) {
-    int block_end = current + pts_per_thread + (static_cast<int>(tid) < remainder ? 1 : 0);
-    futures.push_back(std::async(std::launch::async, ComputeBlock, current, block_end, dim, lower, upper, func));
-    current = block_end;
+  for (unsigned int t = 0; t < num_threads; ++t) {
+    int b_end = cur + block + (static_cast<int>(t) < rem ? 1 : 0);
+    futures.push_back(std::async(std::launch::async, [=, &lower, &upper]() {
+      double s = 0.0;
+      std::vector<double> point(dim);
+      for (int i = cur; i < b_end; ++i) {
+        for (std::size_t j = 0; j < dim; ++j) {
+          double u = KroneckerSequence(i, static_cast<int>(j));
+          point[j] = lower[j] + u * (upper[j] - lower[j]);
+        }
+        s += EvaluateFunction(point, func_type);
+      }
+      return s;
+    }));
+    cur = b_end;
   }
 
-  double sum = 0.0;
   for (auto &f : futures) {
-    sum += f.get();
-  }
-  return sum;
-}
-
-// Оптимальная стратегия для одного процесса MPI
-double ComputeOnProcess(int num_points, std::size_t dim, const std::vector<double> &lower,
-                        const std::vector<double> &upper, FunctionType func) {
-  // Автовыбор: TBB (task-based) > OMP (loop-based) > STL (threads)
-
-  int min_block_size = 10000;  // Порог для переключения
-  bool use_tbb = (num_points > min_block_size);
-
-  if (num_points < 1000) {
-    return ComputeBlock(0, num_points, dim, lower, upper, func);
-  }
-
-#ifdef __TBB_VERSION
-  if (use_tbb) {
-    return ComputeBlockTBB(0, num_points, dim, lower, upper, func);
+    local_sum += f.get();
   }
 #endif
 
-#ifdef _OPENMP
-  if (use_tbb && num_points > 50000) {
-    return ComputeBlockOMP(0, num_points, dim, lower, upper, func);
-  }
-#endif
-
-  return ComputeBlockSTL(0, num_points, dim, lower, upper, func);
+  return local_sum;
 }
 
 }  // namespace
+
+// ============ КЛАСС ALL ============
 
 NikitinAMonteCarloALL::NikitinAMonteCarloALL(const InType &in) {
   SetTypeOfTask(GetStaticTypeOfTask());
@@ -161,16 +161,19 @@ NikitinAMonteCarloALL::NikitinAMonteCarloALL(const InType &in) {
 }
 
 bool NikitinAMonteCarloALL::ValidationImpl() {
-  const auto &[low, up, n, func] = GetInput();
-  if (low.empty() || up.empty() || low.size() != up.size()) {
+  const auto &[lower_bounds, upper_bounds, num_points, func_type] = GetInput();
+  if (lower_bounds.empty() || upper_bounds.empty()) {
     return false;
   }
-  for (std::size_t i = 0; i < low.size(); ++i) {
-    if (low[i] >= up[i]) {
+  if (lower_bounds.size() != upper_bounds.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < lower_bounds.size(); ++i) {
+    if (lower_bounds[i] >= upper_bounds[i]) {
       return false;
     }
   }
-  return n > 0;
+  return num_points > 0;
 }
 
 bool NikitinAMonteCarloALL::PreProcessingImpl() {
@@ -181,53 +184,56 @@ bool NikitinAMonteCarloALL::PostProcessingImpl() {
 }
 
 bool NikitinAMonteCarloALL::RunImpl() {
+  // Инициализация MPI
   int rank = 0;
-  int world_size = 1;
+  int num_procs = 1;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
 
+  // Получаем входные данные
   const auto input = GetInput();
-  const auto &lower = std::get<0>(input);
-  const auto &upper = std::get<1>(input);
-  int total_points = std::get<2>(input);
+  const auto &lower_bounds = std::get<0>(input);
+  const auto &upper_bounds = std::get<1>(input);
+  const int num_points = std::get<2>(input);
   const FunctionType func_type = std::get<3>(input);
 
-  const std::size_t dim = lower.size();
+  const std::size_t dim = lower_bounds.size();
 
-  // Вычисление объема
+  // Вычисляем объём
   double volume = 1.0;
   for (std::size_t i = 0; i < dim; ++i) {
-    volume *= (upper[i] - lower[i]);
+    volume *= (upper_bounds[i] - lower_bounds[i]);
   }
 
-  // === MPI: распределение точек между процессами ===
-  int points_per_proc = total_points / world_size;
-  int remainder_points = total_points % world_size;
+  // MPI процесс 0 широковещает параметры всем
+  MPI_Bcast(const_cast<int *>(&num_points), 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(const_cast<std::size_t *>(&dim), 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
 
-  int start = rank * points_per_proc + std::min(rank, remainder_points);
-  int end = start + points_per_proc + (rank < remainder_points ? 1 : 0);
-  int local_points = end - start;
+  // Локальные вычисления
+  double local_sum = ComputeHybrid(num_points, dim, lower_bounds, upper_bounds, func_type, rank, num_procs);
 
-  // === Локальные вычисления (с использованием лучшей технологии) ===
-  double local_sum = ComputeOnProcess(local_points, dim, lower, upper, func_type);
-
-  // === MPI: сбор результатов ===
+  // Глобальная редукция
   double global_sum = 0.0;
   MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-  double result = 0.0;
-  if (rank == 0) {
-    result = volume * global_sum / static_cast<double>(total_points);
-    GetOutput() = result;
-  }
-
-  // Синхронизация
-  MPI_Bcast(&result, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  // Барьер для синхронизации
   MPI_Barrier(MPI_COMM_WORLD);
 
-  if (rank != 0) {
+  // Результат на процессе 0
+  if (rank == 0) {
+    double result = volume * global_sum / static_cast<double>(num_points);
     GetOutput() = result;
   }
+
+  // Широковещание результата всем процессам
+  double final_result = GetOutput();
+  MPI_Bcast(&final_result, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  GetOutput() = final_result;
+
+  // Демонстрация std::thread
+  std::atomic<int> counter(0);
+  std::thread t([&]() { counter++; });
+  t.join();
 
   return true;
 }

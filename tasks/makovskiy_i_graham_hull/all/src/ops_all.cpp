@@ -204,38 +204,47 @@ std::vector<Point> ComputeHullSTL(const std::vector<Point> &input_points) {
   return BuildHull(filtered);
 }
 
-std::vector<Point> ScatterPoints(int rank, int size, const std::vector<Point> &input_points) {
+std::vector<Point> ReceivePointsWorker() {
   std::vector<Point> local_points;
-  if (rank == 0) {
-    const int num_points = static_cast<int>(input_points.size());
-    if (size > 1) {
-      const int chunk = num_points / size;
-      const int rem = num_points % size;
-
-      int offset = chunk + (rem > 0 ? 1 : 0);
-      for (int i = 1; i < size; ++i) {
-        const int count = chunk + (i < rem ? 1 : 0);
-        MPI_Send(&count, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
-        if (count > 0) {
-          MPI_Send(input_points.data() + offset, count * 2, MPI_DOUBLE, i, 1, MPI_COMM_WORLD);
-        }
-        offset += count;
-      }
-
-      const int local_count = chunk + (rem > 0 ? 1 : 0);
-      local_points.assign(input_points.begin(), input_points.begin() + local_count);
-    } else {
-      local_points = input_points;
-    }
-  } else {
-    int count = 0;
-    MPI_Recv(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    if (count > 0) {
-      local_points.resize(static_cast<size_t>(count));
-      MPI_Recv(local_points.data(), count * 2, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
+  int count = 0;
+  MPI_Recv(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  if (count > 0) {
+    local_points.resize(static_cast<size_t>(count));
+    MPI_Recv(local_points.data(), count * 2, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
   }
   return local_points;
+}
+
+std::vector<Point> SendPointsRoot(int size, const std::vector<Point> &input_points) {
+  if (size <= 1) {
+    return input_points;
+  }
+
+  const int num_points = static_cast<int>(input_points.size());
+  const int chunk = num_points / size;
+  const int rem = num_points % size;
+
+  int offset = chunk + (rem > 0 ? 1 : 0);
+  for (int i = 1; i < size; ++i) {
+    const int count = chunk + (i < rem ? 1 : 0);
+    MPI_Send(&count, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+    if (count > 0) {
+      MPI_Send(input_points.data() + offset, count * 2, MPI_DOUBLE, i, 1, MPI_COMM_WORLD);
+    }
+    offset += count;
+  }
+
+  const int local_count = chunk + (rem > 0 ? 1 : 0);
+  std::vector<Point> local_points;
+  local_points.assign(input_points.begin(), input_points.begin() + local_count);
+  return local_points;
+}
+
+std::vector<Point> ScatterPoints(int rank, int size, const std::vector<Point> &input_points) {
+  if (rank == 0) {
+    return SendPointsRoot(size, input_points);
+  }
+  return ReceivePointsWorker();
 }
 
 std::vector<Point> GatherHulls(int rank, int size, const std::vector<Point> &local_hull) {

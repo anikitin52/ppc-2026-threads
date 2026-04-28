@@ -56,7 +56,7 @@ bool TelnovAIntegralRectangleSTL::RunImpl() {
         const int coord_index = static_cast<int>(current % n);
         current /= n;
 
-        const double x = a + (static_cast<double>(coord_index) + 0.5) * h;
+        const double x = a + ((static_cast<double>(coord_index) + 0.5) * h);
         f_value += x;
       }
 

@@ -265,6 +265,9 @@ void SabutaySparseComplexCcsMultAll::BuildProductMatrix(const CCS &left, const C
     case ppc::task::TypeOfTask::kTBB:
       BuildProductMatrixTbb(left, right, out);
       return;
+    case ppc::task::TypeOfTask::kALL:
+    case ppc::task::TypeOfTask::kMPI:
+    case ppc::task::TypeOfTask::kUnknown:
     default:
       SpmmAbc(left, right, out, kDropMagnitude);
       return;

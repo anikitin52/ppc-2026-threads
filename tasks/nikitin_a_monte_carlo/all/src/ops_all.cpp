@@ -44,8 +44,9 @@ double EvaluateFunction(const std::vector<double> &point, FunctionType type) {
 
 double KroneckerSequence(int index, int dimension) {
   const std::array<double, 10> primes = {2.0, 3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0, 23.0, 29.0};
-  const std::size_t dim_idx = static_cast<std::size_t>(dimension % 10);
-  double alpha = std::sqrt(primes[dim_idx]);
+  const auto dim_idx = static_cast<std::size_t>(dimension % 10);
+  const double prime = primes[dim_idx];
+  double alpha = std::sqrt(prime);
   alpha = alpha - std::floor(alpha);
   return std::fmod(static_cast<double>(index) * alpha, 1.0);
 }
@@ -107,7 +108,8 @@ bool NikitinAMonteCarloALL::RunImpl() {
 
   double local_sum = 0.0;
 
-#pragma omp parallel for reduction(+ : local_sum) schedule(static)
+#pragma omp parallel for reduction(+ : local_sum) schedule(static) default(none) \
+    shared(my_start, my_end, dim, lower_bounds, upper_bounds, func_type)
   for (int i = my_start; i < my_end; ++i) {
     std::vector<double> point(dim);
     for (std::size_t j = 0; j < dim; ++j) {

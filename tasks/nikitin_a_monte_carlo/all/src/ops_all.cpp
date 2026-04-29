@@ -2,13 +2,12 @@
 
 #include <mpi.h>
 #include <omp.h>
-#include <tbb/tbb.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
-#include <functional>
+#include <cstddef>
 #include <thread>
 #include <vector>
 
@@ -27,9 +26,15 @@ double EvaluateFunction(const std::vector<double> &point, FunctionType type) {
     case FunctionType::kLinear:
       return point[0];
     case FunctionType::kProduct:
-      return (point.size() >= 2) ? point[0] * point[1] : 0.0;
+      if (point.size() >= 2) {
+        return point[0] * point[1];
+      }
+      return 0.0;
     case FunctionType::kQuadratic:
-      return (point.size() >= 2) ? point[0] * point[0] + point[1] * point[1] : 0.0;
+      if (point.size() >= 2) {
+        return (point[0] * point[0]) + (point[1] * point[1]);
+      }
+      return 0.0;
     case FunctionType::kExponential:
       return std::exp(point[0]);
     default:
@@ -39,7 +44,8 @@ double EvaluateFunction(const std::vector<double> &point, FunctionType type) {
 
 double KroneckerSequence(int index, int dimension) {
   const std::array<double, 10> primes = {2.0, 3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0, 23.0, 29.0};
-  double alpha = std::sqrt(primes[dimension % 10]);
+  const std::size_t dim_idx = static_cast<std::size_t>(dimension % 10);
+  double alpha = std::sqrt(primes[dim_idx]);
   alpha = alpha - std::floor(alpha);
   return std::fmod(static_cast<double>(index) * alpha, 1.0);
 }
@@ -70,6 +76,7 @@ bool NikitinAMonteCarloALL::ValidationImpl() {
 bool NikitinAMonteCarloALL::PreProcessingImpl() {
   return true;
 }
+
 bool NikitinAMonteCarloALL::PostProcessingImpl() {
   return true;
 }
@@ -92,28 +99,22 @@ bool NikitinAMonteCarloALL::RunImpl() {
     volume *= (upper_bounds[i] - lower_bounds[i]);
   }
 
-  int total_points = num_points;
-  int points_per_rank = total_points / size;
-  int remainder = total_points % size;
+  int points_per_rank = num_points / size;
+  int remainder = num_points % size;
 
   int my_start = (rank * points_per_rank) + std::min(rank, remainder);
   int my_end = my_start + points_per_rank + (rank < remainder ? 1 : 0);
 
   double local_sum = 0.0;
 
-#pragma omp parallel for default(none) shared(my_start, my_end, dim, lower_bounds, upper_bounds, func_type) \
-    reduction(+ : local_sum)
+#pragma omp parallel for reduction(+ : local_sum) schedule(static)
   for (int i = my_start; i < my_end; ++i) {
-    double point_sum = tbb::parallel_reduce(tbb::blocked_range<std::size_t>(0, dim), 0.0,
-                                            [&](const tbb::blocked_range<std::size_t> &r, double sum) {
-      std::vector<double> point(dim);
-      for (std::size_t j = r.begin(); j < r.end(); ++j) {
-        double u = KroneckerSequence(i, static_cast<int>(j));
-        point[j] = lower_bounds[j] + u * (upper_bounds[j] - lower_bounds[j]);
-      }
-      return sum + EvaluateFunction(point, func_type);
-    }, std::plus<>());
-    local_sum += point_sum;
+    std::vector<double> point(dim);
+    for (std::size_t j = 0; j < dim; ++j) {
+      double u = KroneckerSequence(i, static_cast<int>(j));
+      point[j] = lower_bounds[j] + (u * (upper_bounds[j] - lower_bounds[j]));
+    }
+    local_sum += EvaluateFunction(point, func_type);
   }
 
   double global_sum = 0.0;
